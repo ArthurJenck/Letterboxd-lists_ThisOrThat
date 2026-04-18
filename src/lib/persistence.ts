@@ -7,7 +7,7 @@ function hasLocalStorage(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
-function isRankingSession(value: unknown): value is RankingSession {
+export function isRankingSession(value: unknown): value is RankingSession {
   if (!value || typeof value !== 'object') {
     return false;
   }

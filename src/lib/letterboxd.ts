@@ -80,6 +80,21 @@ function rowMatches(row: string[] | undefined, expected: string[]): boolean {
   return expected.every((value, index) => row?.[index] === value);
 }
 
+function unwrapOverQuotedRow(row: string[]): string[] {
+  if (row.length !== 1) {
+    return row;
+  }
+
+  const [field] = row;
+
+  if (!field.includes(',')) {
+    return row;
+  }
+
+  const reparsed = parseCsvRows(field);
+  return reparsed[0] ?? row;
+}
+
 function normaliseDescription(value: string | undefined): string {
   return value ?? '';
 }
@@ -119,7 +134,8 @@ function parseYear(value: string | undefined): number | null {
 }
 
 export function parseLetterboxdCsv(input: string): ParsedLetterboxdCsv {
-  const rows = parseCsvRows(input);
+  const rawRows = parseCsvRows(input);
+  const rows = rawRows.map(unwrapOverQuotedRow);
   const metadata = parseMetadata(rows);
   const filmHeaderIndex = rows.findIndex((row) => rowMatches(row, FILM_HEADER));
 

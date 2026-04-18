@@ -40,6 +40,28 @@ describe('parseLetterboxdCsv', () => {
     );
   });
 
+  it('recovers from an over-quoted CSV re-saved by Excel/Numbers', () => {
+    const overQuoted = [
+      'Letterboxd list export v7',
+      'Date,Name,Tags,URL,Description',
+      '"2023-11-15,Top 20,""top 20, topstats"",https://boxd.it/qhbsu,"',
+      '',
+      'Position,Name,Year,URL,Description',
+      '"1,Requiem for a Dream,2000,https://boxd.it/29VI,""Mon film préféré."""',
+      '"2,The Game,1997,https://boxd.it/26vC,""Un thriller."""'
+    ].join('\n');
+
+    const parsed = parseLetterboxdCsv(overQuoted);
+
+    expect(parsed.metadata.name).toBe('Top 20');
+    expect(parsed.metadata.tags).toBe('top 20, topstats');
+    expect(parsed.films).toHaveLength(2);
+    expect(parsed.films[0].name).toBe('Requiem for a Dream');
+    expect(parsed.films[0].year).toBe(2000);
+    expect(parsed.films[0].description).toBe('Mon film préféré.');
+    expect(parsed.films[1].name).toBe('The Game');
+  });
+
   it('exports a sorted CSV that can be parsed again', () => {
     const parsed = parseLetterboxdCsv(sampleCsv);
     const rankedIds = [...parsed.films]
