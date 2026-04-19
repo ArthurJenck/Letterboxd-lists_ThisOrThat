@@ -29,6 +29,7 @@ export default function DuelCard({
   onSelect
 }: DuelCardProps) {
   const poster = usePoster(film.name, film.year);
+  const displayName = poster.displayName;
 
   return (
     <article
@@ -45,10 +46,10 @@ export default function DuelCard({
     >
       <div className="duel-card__poster" data-status={poster.status}>
         {poster.status === 'ready' && poster.url ? (
-          <img src={poster.url} alt={`Affiche de ${film.name}`} loading="lazy" />
+          <img src={poster.url} alt={`Affiche de ${displayName}`} loading="lazy" />
         ) : (
           <span className="duel-card__poster-fallback" aria-hidden="true">
-            {getInitials(film.name)}
+            {getInitials(displayName)}
           </span>
         )}
         <span className="duel-card__corner" aria-hidden="true">
@@ -56,7 +57,7 @@ export default function DuelCard({
         </span>
       </div>
       <div className="duel-card__content">
-        <h3 className="duel-card__title">{film.name}</h3>
+        <h3 className="duel-card__title">{displayName}</h3>
         <div className="duel-card__meta">
           <span>{formatYear(film.year)}</span>
           {film.url ? (

@@ -1,10 +1,97 @@
-const CACHE_KEY = 'letterboxd-duel-sorter/posters';
+const CACHE_KEY = 'letterboxd-duel-sorter/posters/v3';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w342';
 const API_BASE = 'https://api.themoviedb.org/3/search/movie';
 
 export interface PosterEntry {
   posterPath: string | null;
   tmdbId: number | null;
+  originalTitle?: string | null;
+  originalLanguage?: string | null;
+}
+
+interface TmdbSearchResult {
+  id: number;
+  poster_path: string | null;
+  title?: string;
+  original_title?: string;
+  original_language?: string;
+  release_date?: string;
+  popularity?: number;
+}
+
+function normalizeTitle(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function containsAsWords(haystack: string, needle: string): boolean {
+  if (!haystack || !needle) {
+    return false;
+  }
+
+  return ` ${haystack} `.includes(` ${needle} `);
+}
+
+function scoreCandidate(
+  result: TmdbSearchResult,
+  normalizedQuery: string,
+  targetYear: number | null
+): number {
+  let score = 0;
+  const resultYear = result.release_date
+    ? Number.parseInt(result.release_date.slice(0, 4), 10)
+    : null;
+
+  if (targetYear !== null && resultYear !== null && !Number.isNaN(resultYear)) {
+    const diff = Math.abs(resultYear - targetYear);
+    if (diff === 0) score += 100;
+    else if (diff === 1) score += 40;
+    else if (diff === 2) score += 10;
+  }
+
+  const normTitle = result.title ? normalizeTitle(result.title) : '';
+  const normOriginal = result.original_title ? normalizeTitle(result.original_title) : '';
+
+  if (normTitle === normalizedQuery || normOriginal === normalizedQuery) {
+    score += 80;
+  } else if (
+    containsAsWords(normTitle, normalizedQuery) ||
+    containsAsWords(normOriginal, normalizedQuery)
+  ) {
+    score += 15;
+  }
+
+  score += Math.min(result.popularity ?? 0, 25);
+  return score;
+}
+
+function pickBestResult(
+  results: TmdbSearchResult[],
+  name: string,
+  year: number | null
+): TmdbSearchResult | null {
+  if (results.length === 0) {
+    return null;
+  }
+
+  const normalizedQuery = normalizeTitle(name);
+  let best = results[0];
+  let bestScore = scoreCandidate(best, normalizedQuery, year);
+
+  for (let index = 1; index < results.length; index += 1) {
+    const candidateScore = scoreCandidate(results[index], normalizedQuery, year);
+    if (candidateScore > bestScore) {
+      best = results[index];
+      bestScore = candidateScore;
+    }
+  }
+
+  return best;
 }
 
 type PosterCache = Record<string, PosterEntry>;
@@ -65,6 +152,20 @@ export function getCachedPoster(name: string, year: number | null): PosterEntry 
   return cache[cacheKey(name, year)] ?? null;
 }
 
+export function resolveDisplayName(name: string, year: number | null): string {
+  const entry = getCachedPoster(name, year);
+
+  if (
+    entry?.originalLanguage === 'fr' &&
+    entry.originalTitle &&
+    entry.originalTitle.trim().length > 0
+  ) {
+    return entry.originalTitle;
+  }
+
+  return name;
+}
+
 export function hasTmdbToken(): boolean {
   return Boolean(import.meta.env.VITE_TMDB_READ_TOKEN) && !apiDisabled;
 }
@@ -116,12 +217,14 @@ export async function fetchPoster(name: string, year: number | null): Promise<Po
       }
 
       const data = (await response.json()) as {
-        results?: Array<{ id: number; poster_path: string | null }>;
+        results?: TmdbSearchResult[];
       };
-      const first = data.results?.[0];
+      const best = pickBestResult(data.results ?? [], name, year);
       const entry: PosterEntry = {
-        posterPath: first?.poster_path ?? null,
-        tmdbId: first?.id ?? null
+        posterPath: best?.poster_path ?? null,
+        tmdbId: best?.id ?? null,
+        originalTitle: best?.original_title ?? null,
+        originalLanguage: best?.original_language ?? null
       };
 
       const next = { ...readCache(), [key]: entry };

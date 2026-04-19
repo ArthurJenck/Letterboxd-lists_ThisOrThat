@@ -21,6 +21,7 @@ import {
     exportSessionAsJson,
     parseSharedSession,
 } from './lib/sessionShare'
+import { resolveDisplayName } from './lib/tmdb'
 import {
     applyChoice,
     createSession,
@@ -29,6 +30,7 @@ import {
     getInsertionWindow,
     getPhaseLabel,
     getRankedFilms,
+    removeFromRanking,
     restartSession,
     undoLastChoice,
 } from './lib/ranking'
@@ -184,6 +186,14 @@ function App() {
         startTransition(() => {
             setSession((current) =>
                 current ? applyChoice(current, preferredSide) : current,
+            )
+        })
+    }
+
+    const handleRemoveFromRanking = (filmId: number) => {
+        startTransition(() => {
+            setSession((current) =>
+                current ? removeFromRanking(current, filmId) : current,
             )
         })
     }
@@ -439,8 +449,8 @@ function App() {
                             termine.
                         </li>
                         <li>
-                            Besoin de changer d'appareil ? Exporte la session
-                            en JSON, transfère le fichier (AirDrop, mail,
+                            Besoin de changer d'appareil ? Exporte la session en
+                            JSON, transfère le fichier (AirDrop, mail,
                             iCloud...) puis importe-le de l'autre côté pour
                             reprendre exactement où tu t'étais arrêté.
                         </li>
@@ -632,14 +642,19 @@ function App() {
                 </section>
 
                 <aside className="sidebar">
-                    <section className="sidebar-card">
+                    <div className="sidebar__inner">
+                    <section className="sidebar-card sidebar-card--preview">
                         <p className="sidebar-card__eyebrow">Aperçu</p>
-                        <h3>Le haut du classement provisoire</h3>
+                        <h3>Classement provisoire</h3>
                         {rankedPreview.length > 0 ? (
-                            <ol className="ranking-list">
-                                {rankedPreview
-                                    .slice(0, 8)
-                                    .map((film, index) => (
+                            <div className="ranking-list-scroll">
+                                <ol className="ranking-list">
+                                    {rankedPreview.map((film, index) => {
+                                        const displayName = resolveDisplayName(
+                                            film.name,
+                                            film.year,
+                                        )
+                                        return (
                                         <li
                                             key={film.id}
                                             className="ranking-list__item"
@@ -651,15 +666,30 @@ function App() {
                                                 )}
                                             </span>
                                             <div>
-                                                <strong>{film.name}</strong>
+                                                <strong>{displayName}</strong>
                                                 <small>
                                                     {film.year ??
                                                         'année inconnue'}
                                                 </small>
                                             </div>
+                                            <button
+                                                type="button"
+                                                className="ranking-list__remove"
+                                                aria-label={`Retirer ${displayName} du classement`}
+                                                title="Retirer du classement"
+                                                onClick={() =>
+                                                    handleRemoveFromRanking(
+                                                        film.id,
+                                                    )
+                                                }
+                                            >
+                                                ×
+                                            </button>
                                         </li>
-                                    ))}
-                            </ol>
+                                        )
+                                    })}
+                                </ol>
+                            </div>
                         ) : (
                             <p className="sidebar-card__empty">
                                 Aucun classement tant qu'aucun CSV n'a été
@@ -706,7 +736,7 @@ function App() {
                         </dl>
                     </section>
 
-                    <section className="sidebar-card">
+                    {/* <section className="sidebar-card">
                         <p className="sidebar-card__eyebrow">Export</p>
                         <h3>Sortie CSV Letterboxd-like</h3>
                         <p className="sidebar-card__empty">
@@ -714,7 +744,8 @@ function App() {
                             tandis que `Name`, `Year`, `URL` et `Description`
                             sont conservés.
                         </p>
-                    </section>
+                    </section> */}
+                    </div>
                 </aside>
             </main>
         </div>

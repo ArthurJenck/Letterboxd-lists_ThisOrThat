@@ -338,6 +338,75 @@ export function applyChoice(
   };
 }
 
+export function removeFromRanking(
+  session: RankingSession,
+  filmId: number,
+  explicitTime?: string
+): RankingSession {
+  if (!session.rankedIds.includes(filmId)) {
+    return session;
+  }
+
+  const before = snapshot(session);
+  const timestamp = nowIso(explicitTime);
+  const rankedIds = session.rankedIds.filter((id) => id !== filmId);
+  const pendingIds = [...session.pendingIds, filmId];
+  const stats = {
+    ...session.stats,
+    insertedCount: rankedIds.length,
+    updatedAt: timestamp
+  };
+
+  if (rankedIds.length === 0) {
+    const seededRankedIds = [pendingIds[0]];
+    const remainingPending = pendingIds.slice(1);
+    const baseSession: RankingSession = {
+      ...session,
+      phase: remainingPending.length > 0 ? 'inserting' : 'complete',
+      rankedIds: seededRankedIds,
+      pendingIds: remainingPending,
+      currentMatch: remainingPending.length > 0
+        ? buildInsertionMatch(remainingPending[0], seededRankedIds)
+        : null,
+      validation: null,
+      stats: {
+        ...stats,
+        insertedCount: seededRankedIds.length
+      },
+      history: pushHistory(session, before)
+    };
+
+    if (remainingPending.length === 0) {
+      return completeSession(baseSession, timestamp);
+    }
+
+    return baseSession;
+  }
+
+  if (session.phase === 'inserting' && session.currentMatch?.kind === 'insertion') {
+    return {
+      ...session,
+      rankedIds,
+      pendingIds,
+      currentMatch: buildInsertionMatch(session.currentMatch.candidateId, rankedIds),
+      validation: null,
+      stats,
+      history: pushHistory(session, before)
+    };
+  }
+
+  return {
+    ...session,
+    phase: 'inserting',
+    rankedIds,
+    pendingIds,
+    currentMatch: buildInsertionMatch(pendingIds[0], rankedIds),
+    validation: null,
+    stats,
+    history: pushHistory(session, before)
+  };
+}
+
 export function undoLastChoice(session: RankingSession): RankingSession {
   const previous = session.history.at(-1);
 
