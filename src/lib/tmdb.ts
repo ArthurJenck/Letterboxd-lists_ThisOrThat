@@ -1,4 +1,4 @@
-const CACHE_KEY = 'letterboxd-duel-sorter/posters/v3';
+const CACHE_KEY = 'letterboxd-duel-sorter/posters/v6';
 const IMAGE_BASE = 'https://image.tmdb.org/t/p/w342';
 const API_BASE = 'https://api.themoviedb.org/3/search/movie';
 
@@ -37,6 +37,18 @@ function containsAsWords(haystack: string, needle: string): boolean {
   return ` ${haystack} `.includes(` ${needle} `);
 }
 
+function hasStrongWordBoundaryMatch(
+  haystack: string,
+  needle: string,
+  minCoverage = 0.5
+): boolean {
+  if (!containsAsWords(haystack, needle)) {
+    return false;
+  }
+
+  return needle.length / haystack.length >= minCoverage;
+}
+
 function scoreCandidate(
   result: TmdbSearchResult,
   normalizedQuery: string,
@@ -60,8 +72,8 @@ function scoreCandidate(
   if (normTitle === normalizedQuery || normOriginal === normalizedQuery) {
     score += 80;
   } else if (
-    containsAsWords(normTitle, normalizedQuery) ||
-    containsAsWords(normOriginal, normalizedQuery)
+    hasStrongWordBoundaryMatch(normTitle, normalizedQuery) ||
+    hasStrongWordBoundaryMatch(normOriginal, normalizedQuery)
   ) {
     score += 15;
   }
@@ -194,7 +206,7 @@ export async function fetchPoster(name: string, year: number | null): Promise<Po
 
   const promise = (async (): Promise<PosterEntry> => {
     try {
-      const params = new URLSearchParams({ query: name, language: 'fr-FR' });
+      const params = new URLSearchParams({ query: name, language: 'en-US' });
 
       if (year) {
         params.set('year', String(year));
