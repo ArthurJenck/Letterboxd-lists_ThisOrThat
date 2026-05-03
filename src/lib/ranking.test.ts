@@ -117,7 +117,15 @@ describe('ranking engine', () => {
         sweep: 1,
         swapsInSweep: 0,
         totalSwaps: 0,
-        totalSweeps: 0
+        totalSweeps: 0,
+        strategy: 'stratified' as const,
+        gap: 1,
+        currentLeftIndex: 0,
+        currentRightIndex: 1,
+        passKind: 'wide' as const,
+        budgetRemaining: 10,
+        seenPairs: [],
+        quietPasses: 0
       },
       stats: {
         totalFilms: 3,
