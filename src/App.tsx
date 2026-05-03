@@ -30,6 +30,7 @@ import {
     getInsertionWindow,
     getPhaseLabel,
     getRankedFilms,
+    moveInRanking,
     removeFromRanking,
     restartSession,
     undoLastChoice,
@@ -194,6 +195,14 @@ function App() {
         startTransition(() => {
             setSession((current) =>
                 current ? removeFromRanking(current, filmId) : current,
+            )
+        })
+    }
+
+    const handleMoveInRanking = (filmId: number, direction: 'up' | 'down') => {
+        startTransition(() => {
+            setSession((current) =>
+                current ? moveInRanking(current, filmId, direction) : current,
             )
         })
     }
@@ -528,9 +537,10 @@ function App() {
                                 {session.phase === 'validating' &&
                                 session.validation ? (
                                     <p>
-                                        Passe {session.validation.sweep}, index{' '}
-                                        {session.validation.index + 1} sur{' '}
-                                        {session.rankedIds.length - 1}
+                                        Vérification {session.validation.passKind === 'wide' ? 'large' : 'fine'}{' '}
+                                        — passe {session.validation.sweep},{' '}
+                                        pos. {session.validation.currentLeftIndex + 1} vs {session.validation.currentRightIndex + 1}{' '}
+                                        ({session.validation.budgetRemaining} duels restants)
                                     </p>
                                 ) : null}
                             </div>
@@ -672,19 +682,41 @@ function App() {
                                                         'année inconnue'}
                                                 </small>
                                             </div>
-                                            <button
-                                                type="button"
-                                                className="ranking-list__remove"
-                                                aria-label={`Retirer ${displayName} du classement`}
-                                                title="Retirer du classement"
-                                                onClick={() =>
-                                                    handleRemoveFromRanking(
-                                                        film.id,
-                                                    )
-                                                }
-                                            >
-                                                ×
-                                            </button>
+                                            <div className="ranking-list__actions">
+                                                <button
+                                                    type="button"
+                                                    className="ranking-list__move"
+                                                    aria-label={`Monter ${displayName} d'une position`}
+                                                    title="Monter d'une position"
+                                                    disabled={index === 0}
+                                                    onClick={() => handleMoveInRanking(film.id, 'up')}
+                                                >
+                                                    ▲
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="ranking-list__move"
+                                                    aria-label={`Descendre ${displayName} d'une position`}
+                                                    title="Descendre d'une position"
+                                                    disabled={index === rankedPreview.length - 1}
+                                                    onClick={() => handleMoveInRanking(film.id, 'down')}
+                                                >
+                                                    ▼
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    className="ranking-list__remove"
+                                                    aria-label={`Retirer ${displayName} du classement`}
+                                                    title="Retirer du classement"
+                                                    onClick={() =>
+                                                        handleRemoveFromRanking(
+                                                            film.id,
+                                                        )
+                                                    }
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
                                         </li>
                                         )
                                     })}

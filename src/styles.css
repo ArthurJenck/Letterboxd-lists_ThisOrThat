@@ -673,6 +673,38 @@ select {
   font-size: 0.88rem;
 }
 
+.ranking-list__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.ranking-list__move {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  background: transparent;
+  border: 0;
+  color: var(--lb-text-mute);
+  cursor: pointer;
+  border-radius: var(--lb-radius-sm);
+  font-size: 0.65rem;
+  line-height: 1;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.ranking-list__move:hover:not(:disabled) {
+  color: var(--lb-orange);
+  background: var(--lb-bg-hover);
+}
+
+.ranking-list__move:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
+}
+
 .ranking-list__remove {
   display: inline-flex;
   align-items: center;

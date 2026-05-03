@@ -1,5 +1,5 @@
 import type { RankingSession } from './types';
-import { SESSION_VERSION } from './ranking';
+import { SESSION_VERSION, migrateSessionIfNeeded } from './ranking';
 
 const STORAGE_KEY = 'letterboxd-duel-sorter/session';
 
@@ -36,7 +36,8 @@ export function loadStoredSession(): RankingSession | null {
     }
 
     const parsed = JSON.parse(raw) as unknown;
-    return isRankingSession(parsed) ? parsed : null;
+    const session = isRankingSession(parsed) ? parsed : null;
+    return session ? migrateSessionIfNeeded(session) : null;
   } catch {
     return null;
   }

@@ -27,9 +27,14 @@ function cloneStats(stats: RankingStats): RankingStats {
 function cloneValidation(validation: ValidationState | null): ValidationState | null {
   return validation
     ? {
-        ...validation
+        ...validation,
+        seenPairs: [...validation.seenPairs]
       }
     : null;
+}
+
+function pairKeyFor(idA: number, idB: number): string {
+  return idA < idB ? `${idA}-${idB}` : `${idB}-${idA}`;
 }
 
 function snapshot(session: RankingSession): SessionSnapshot {
@@ -60,26 +65,35 @@ function buildInsertionMatch(candidateId: number, rankedIds: number[], low = 0, 
   };
 }
 
-function buildValidationState(partial?: Partial<ValidationState>): ValidationState {
+function buildValidationState(n = 0): ValidationState {
+  const gap = Math.max(2, Math.floor(n / 10));
   return {
-    index: partial?.index ?? 0,
-    sweep: partial?.sweep ?? 1,
-    swapsInSweep: partial?.swapsInSweep ?? 0,
-    totalSwaps: partial?.totalSwaps ?? 0,
-    totalSweeps: partial?.totalSweeps ?? 0
+    index: 0,
+    sweep: 1,
+    swapsInSweep: 0,
+    totalSwaps: 0,
+    totalSweeps: 0,
+    strategy: 'stratified',
+    gap,
+    currentLeftIndex: 0,
+    currentRightIndex: gap,
+    passKind: 'wide',
+    budgetRemaining: Math.max(8, Math.floor(n / 2)),
+    seenPairs: [],
+    quietPasses: 0,
   };
 }
 
 function buildValidationMatch(rankedIds: number[], validation: ValidationState): ValidationMatch | null {
-  if (rankedIds.length < 2 || validation.index >= rankedIds.length - 1) {
+  if (rankedIds.length < 2 || validation.currentRightIndex >= rankedIds.length) {
     return null;
   }
 
   return {
     kind: 'validation',
-    leftId: rankedIds[validation.index],
-    rightId: rankedIds[validation.index + 1],
-    index: validation.index,
+    leftId: rankedIds[validation.currentLeftIndex],
+    rightId: rankedIds[validation.currentRightIndex],
+    index: validation.currentLeftIndex,
     sweep: validation.sweep
   };
 }
@@ -115,17 +129,12 @@ function completeSession(session: RankingSession, explicitTime?: string): Rankin
 }
 
 function startValidation(session: RankingSession, explicitTime?: string): RankingSession {
-  const validation = buildValidationState();
+  const N = session.rankedIds.length;
+  const validation = buildValidationState(N);
   const currentMatch = buildValidationMatch(session.rankedIds, validation);
 
   if (!currentMatch) {
-    return completeSession(
-      {
-        ...session,
-        validation
-      },
-      explicitTime
-    );
+    return completeSession({ ...session, validation }, explicitTime);
   }
 
   return {
@@ -257,76 +266,103 @@ export function applyChoice(
     };
   }
 
-  const validation = session.validation ?? buildValidationState();
-  const rankedIds = [...session.rankedIds];
+  const validation = session.validation ?? buildValidationState(session.rankedIds.length);
+  const { currentLeftIndex, currentRightIndex, gap, passKind, budgetRemaining } = validation;
+  const N = session.rankedIds.length;
+  const pairKey = pairKeyFor(session.rankedIds[currentLeftIndex], session.rankedIds[currentRightIndex]);
+  const seenPairs = [...validation.seenPairs, pairKey];
+
+  let rankedIds = [...session.rankedIds];
+  let moved = false;
 
   if (preferredSide === 'right') {
-    const left = rankedIds[validation.index];
-    rankedIds[validation.index] = rankedIds[validation.index + 1];
-    rankedIds[validation.index + 1] = left;
+    const actualGap = currentRightIndex - currentLeftIndex;
+    if (actualGap > 5) {
+      const rightId = rankedIds[currentRightIndex];
+      rankedIds.splice(currentRightIndex, 1);
+      rankedIds.splice(currentLeftIndex, 0, rightId);
+    } else {
+      [rankedIds[currentLeftIndex], rankedIds[currentRightIndex]] = [rankedIds[currentRightIndex], rankedIds[currentLeftIndex]];
+    }
+    moved = true;
   }
 
-  const swapsInSweep = validation.swapsInSweep + (preferredSide === 'right' ? 1 : 0);
-  const totalSwaps = validation.totalSwaps + (preferredSide === 'right' ? 1 : 0);
-  const steppedIndex = preferredSide === 'right'
-    ? Math.max(0, validation.index - 1)
-    : validation.index + 1;
+  const swapsInSweep = validation.swapsInSweep + (moved ? 1 : 0);
+  const totalSwaps = validation.totalSwaps + (moved ? 1 : 0);
   const stats = {
     ...session.stats,
     comparisons: session.stats.comparisons + 1,
     validationComparisons: session.stats.validationComparisons + 1,
     updatedAt: timestamp
   };
+  const newBudget = budgetRemaining - 1;
 
-  if (steppedIndex >= rankedIds.length - 1) {
-    const completedValidation = buildValidationState({
-      index: steppedIndex,
-      sweep: validation.sweep,
-      swapsInSweep,
-      totalSwaps,
-      totalSweeps: validation.totalSweeps + 1
-    });
+  if (newBudget <= 0) {
+    return completeSession({
+      ...session,
+      rankedIds,
+      validation: { ...validation, seenPairs, swapsInSweep, totalSwaps, budgetRemaining: 0 },
+      stats,
+      history: pushHistory(session, before)
+    }, timestamp);
+  }
 
-    if (swapsInSweep === 0) {
-      return completeSession(
-        {
-          ...session,
-          rankedIds,
-          currentMatch: null,
-          validation: completedValidation,
-          stats,
-          history: pushHistory(session, before)
-        },
-        timestamp
-      );
+  const nextLeft = currentLeftIndex + 1;
+  const nextRight = nextLeft + (passKind === 'wide' ? gap : 1);
+
+  if (nextRight >= N) {
+    const quietPasses = swapsInSweep === 0 ? validation.quietPasses + 1 : 0;
+    if (quietPasses >= 3) {
+      return completeSession({
+        ...session,
+        rankedIds,
+        validation: { ...validation, seenPairs, swapsInSweep, totalSwaps, budgetRemaining: newBudget, quietPasses },
+        stats,
+        history: pushHistory(session, before)
+      }, timestamp);
     }
-
-    const resetValidation = buildValidationState({
-      index: 0,
+    const nextPassKind: 'wide' | 'narrow' = passKind === 'wide' ? 'narrow' : 'wide';
+    const resetLeft = 0;
+    const resetRight = resetLeft + (nextPassKind === 'wide' ? gap : 1);
+    const nextValidation: ValidationState = {
+      ...validation,
+      index: resetLeft,
       sweep: validation.sweep + 1,
       swapsInSweep: 0,
       totalSwaps,
-      totalSweeps: validation.totalSweeps + 1
-    });
-
+      totalSweeps: validation.totalSweeps + 1,
+      currentLeftIndex: resetLeft,
+      currentRightIndex: resetRight,
+      passKind: nextPassKind,
+      budgetRemaining: newBudget,
+      seenPairs,
+      quietPasses,
+    };
+    const nextMatch = buildValidationMatch(rankedIds, nextValidation);
+    if (!nextMatch) {
+      return completeSession({ ...session, rankedIds, validation: nextValidation, stats, history: pushHistory(session, before) }, timestamp);
+    }
     return {
       ...session,
       phase: 'validating',
       rankedIds,
-      currentMatch: buildValidationMatch(rankedIds, resetValidation),
-      validation: resetValidation,
+      currentMatch: nextMatch,
+      validation: nextValidation,
       stats,
       history: pushHistory(session, before)
     };
   }
 
-  const nextValidation = buildValidationState({
-    index: steppedIndex,
-    sweep: validation.sweep,
+  const nextValidation: ValidationState = {
+    ...validation,
+    index: nextLeft,
     swapsInSweep,
     totalSwaps,
-    totalSweeps: validation.totalSweeps
-  });
+    currentLeftIndex: nextLeft,
+    currentRightIndex: nextRight,
+    budgetRemaining: newBudget,
+    seenPairs,
+  };
 
   return {
     ...session,
@@ -335,6 +371,44 @@ export function applyChoice(
     validation: nextValidation,
     stats,
     history: pushHistory(session, before)
+  };
+}
+
+export function moveInRanking(
+  session: RankingSession,
+  filmId: number,
+  direction: 'up' | 'down',
+  explicitTime?: string
+): RankingSession {
+  const idx = session.rankedIds.indexOf(filmId);
+  if (idx < 0) return session;
+  if (direction === 'up' && idx === 0) return session;
+  if (direction === 'down' && idx === session.rankedIds.length - 1) return session;
+
+  const before = snapshot(session);
+  const swapWith = direction === 'up' ? idx - 1 : idx + 1;
+  const nextRanked = [...session.rankedIds];
+  [nextRanked[idx], nextRanked[swapWith]] = [nextRanked[swapWith], nextRanked[idx]];
+
+  let nextCurrentMatch = session.currentMatch;
+
+  if (session.phase === 'inserting' && session.currentMatch?.kind === 'insertion') {
+    const { candidateId, low, high } = session.currentMatch;
+    const minSwap = Math.min(idx, swapWith);
+    const maxSwap = Math.max(idx, swapWith);
+    if (minSwap < high && maxSwap >= low) {
+      nextCurrentMatch = buildInsertionMatch(candidateId, nextRanked, low, high);
+    }
+  } else if (session.phase === 'validating' && session.validation) {
+    nextCurrentMatch = buildValidationMatch(nextRanked, session.validation);
+  }
+
+  return {
+    ...session,
+    rankedIds: nextRanked,
+    currentMatch: nextCurrentMatch,
+    history: pushHistory(session, before),
+    stats: { ...session.stats, updatedAt: nowIso(explicitTime) },
   };
 }
 
@@ -465,9 +539,7 @@ export function estimateRemainingDuels(session: RankingSession): number {
     return estimate + Math.max(3, Math.ceil(session.films.length / 8));
   }
 
-  const validation = session.validation ?? buildValidationState();
-  const currentSweepRemaining = Math.max(0, session.rankedIds.length - 1 - validation.index);
-  return currentSweepRemaining + (validation.swapsInSweep > 0 ? session.rankedIds.length - 1 : 0);
+  return session.validation?.budgetRemaining ?? Math.max(8, Math.floor(session.rankedIds.length / 2));
 }
 
 export function findFilmById(films: FilmRecord[], id: number): FilmRecord {
@@ -495,6 +567,13 @@ export function getPhaseLabel(phase: RankingSession['phase']): string {
     default:
       return 'Prêt';
   }
+}
+
+export function migrateSessionIfNeeded(session: RankingSession): RankingSession {
+  if (session.phase === 'validating' && session.validation && !('strategy' in session.validation)) {
+    return startValidation({ ...session, validation: null });
+  }
+  return session;
 }
 
 export function getInsertionWindow(session: RankingSession): string | null {

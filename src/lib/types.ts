@@ -48,6 +48,14 @@ export interface ValidationState {
   swapsInSweep: number;
   totalSwaps: number;
   totalSweeps: number;
+  strategy: 'stratified';
+  gap: number;
+  currentLeftIndex: number;
+  currentRightIndex: number;
+  passKind: 'wide' | 'narrow';
+  budgetRemaining: number;
+  seenPairs: string[];
+  quietPasses: number;
 }
 
 export interface RankingStats {
